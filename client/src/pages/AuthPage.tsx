@@ -1,10 +1,43 @@
 import { Button, ConfigProvider, Input } from "antd";
-import { Link, useLocation } from "react-router-dom";
+import axios from "axios";
+import { useState } from "react";
+import type { FormEvent } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import logo from "../assets/logo.png";
+
+const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000/api";
 
 const AuthPage = () => {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const isRegister = pathname.toLowerCase().includes("register");
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const formSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = Object.fromEntries(new FormData(e.currentTarget));
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const { data } = await axios.post(
+        `${API_URL}/${isRegister ? "register" : "login"}`,
+        formData,
+      );
+      localStorage.setItem("token", data.token);
+      navigate("/home", { replace: true });
+    } catch (err) {
+      console.error(err);
+      const message = (err as { response?: { data?: { message?: string } } })
+        .response?.data?.message;
+      setError(message ?? "Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const visualPanel = (
     <aside className="relative hidden h-dvh overflow-hidden bg-[#110e0c] lg:flex lg:flex-col lg:justify-between">
@@ -42,10 +75,7 @@ const AuthPage = () => {
         </header>
 
         {/* Form */}
-        <form
-          className="space-y-5"
-          onSubmit={(event) => event.preventDefault()}
-        >
+        <form className="space-y-5" onSubmit={formSubmit}>
           {/* Full name */}
           {isRegister && (
             <div className="space-y-2">
@@ -58,6 +88,7 @@ const AuthPage = () => {
 
               <Input
                 id="full-name"
+                name="fullName"
                 size="large"
                 placeholder="Enter your full name"
                 autoComplete="name"
@@ -77,6 +108,7 @@ const AuthPage = () => {
 
             <Input
               id="email"
+              name="email"
               type="email"
               size="large"
               placeholder="you@example.com"
@@ -96,6 +128,7 @@ const AuthPage = () => {
 
             <Input.Password
               id="password"
+              name="password"
               size="large"
               placeholder={
                 isRegister ? "Create a password" : "Enter your password"
@@ -117,6 +150,13 @@ const AuthPage = () => {
             </div>
           )}
 
+          {/* Error */}
+          {error && (
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+              {error}
+            </p>
+          )}
+
           {/* Submit */}
           <div className="pt-3">
             <Button
@@ -124,6 +164,7 @@ const AuthPage = () => {
               htmlType="submit"
               size="large"
               block
+              loading={loading}
               className="!h-12 !border-0 !font-semibold !shadow-lg !shadow-orange-500/20"
             >
               {isRegister ? "Create account" : "Log in"}
