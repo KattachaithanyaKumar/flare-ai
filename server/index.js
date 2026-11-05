@@ -1,38 +1,39 @@
+import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
 
-import sequelize from "./config/database.js";
-import userRouter from "./routes/UserRoute.js";
+import { requireAuth } from "./middleware/requireAuth.js";
 
 const PORT = process.env.PORT ?? 3000;
 
+const allowedOrigins = (process.env.CLIENT_ORIGIN ?? "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 const app = express();
 
-app.use(cors());
+app.use(
+  cors({
+    origin: allowedOrigins.length > 0 ? allowedOrigins : true,
+  }),
+);
 app.use(express.json());
-dotenv.config();
 
 app.get("/", (req, res) => {
   res.send("Hello world");
 });
 
-// routes
-app.use("/api", userRouter);
+app.get("/api/me", requireAuth, (req, res) => {
+  res.json({
+    user: {
+      id: req.user.sub,
+      email: req.user.email,
+      role: req.user.role,
+    },
+  });
+});
 
-const start = async () => {
-  try {
-    await sequelize.authenticate();
-    await sequelize.sync({ alter: true });
-    console.log("Database connected");
-
-    app.listen(PORT, () => {
-      console.log(`server started with http://localhost:${PORT}`);
-    });
-  } catch (error) {
-    console.error("Unable to connect to the database:", error);
-    process.exit(1);
-  }
-};
-
-start();
+app.listen(PORT, () => {
+  console.log(`server started with http://localhost:${PORT}`);
+});

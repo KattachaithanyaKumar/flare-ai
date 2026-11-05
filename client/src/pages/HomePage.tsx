@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import logo from "../assets/logo.png";
+import { supabase } from "../lib/supabase";
 
 type Message = {
   id: string;
@@ -151,7 +152,9 @@ const HomePage = () => {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const replyTimeout = useRef<number | null>(null);
 
-  const name = localStorage.getItem("name")?.trim() || "there";
+  const [name, setName] = useState(
+    () => localStorage.getItem("name")?.trim() || "there",
+  );
   const firstName = name.split(" ")[0] || "there";
   const firstUserMessage = messages.find((message) => message.role === "user");
 
@@ -162,6 +165,23 @@ const HomePage = () => {
   useEffect(() => {
     return () => {
       if (replyTimeout.current) window.clearTimeout(replyTimeout.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    supabase.auth.getUser().then(({ data }) => {
+      const fullName = data.user?.user_metadata?.fullName ?? data.user?.email;
+
+      if (active && fullName) {
+        setName(String(fullName));
+        localStorage.setItem("name", String(fullName));
+      }
+    });
+
+    return () => {
+      active = false;
     };
   }, []);
 
@@ -218,8 +238,8 @@ const HomePage = () => {
     inputRef.current?.focus();
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("token");
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     localStorage.removeItem("name");
     navigate("/login", { replace: true });
   };

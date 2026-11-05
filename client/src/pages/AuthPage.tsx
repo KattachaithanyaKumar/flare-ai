@@ -1,11 +1,9 @@
 import { Button, ConfigProvider, Input } from "antd";
-import axios from "axios";
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import logo from "../assets/logo.png";
-
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000/api";
+import { supabase } from "../lib/supabase";
 
 const AuthPage = () => {
   const { pathname } = useLocation();
@@ -17,24 +15,61 @@ const AuthPage = () => {
 
   const formSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const formData = Object.fromEntries(new FormData(e.currentTarget));
+    const formData = new FormData(e.currentTarget);
+    const email = String(formData.get("email") ?? "").trim().toLowerCase();
+    const password = String(formData.get("password") ?? "");
+    const fullName = String(formData.get("fullName") ?? "").trim();
+
+    if (!email || !password || (isRegister && !fullName)) {
+      setError("Please fill in all required fields.");
+      return;
+    }
 
     setLoading(true);
     setError("");
 
     try {
-      const { data } = await axios.post(
-        `${API_URL}/${isRegister ? "register" : "login"}`,
-        formData,
+      if (isRegister) {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { fullName } },
+        });
+
+        if (error) throw error;
+
+        if (!data.session) {
+          setError("Check your email to confirm your account, then log in.");
+          return;
+        }
+
+        localStorage.setItem(
+          "name",
+          String(data.user?.user_metadata?.fullName ?? fullName),
+        );
+        navigate("/home", { replace: true });
+        return;
+      }
+
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) throw error;
+
+      localStorage.setItem(
+        "name",
+        String(data.user.user_metadata?.fullName ?? data.user.email ?? ""),
       );
-      localStorage.setItem("token", data.token);
-      localStorage.setItem("name", data.user.fullName);
       navigate("/home", { replace: true });
     } catch (err) {
       console.error(err);
-      const message = (err as { response?: { data?: { message?: string } } })
-        .response?.data?.message;
-      setError(message ?? "Something went wrong. Please try again.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong. Please try again.",
+      );
     } finally {
       setLoading(false);
     }
