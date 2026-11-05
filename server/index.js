@@ -24,6 +24,14 @@ app.get("/", (req, res) => {
   res.send("Hello world");
 });
 
+app.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
+});
+
 app.get("/api/me", requireAuth, (req, res) => {
   res.json({
     user: {
