@@ -28,6 +28,7 @@ const AuthPage = () => {
         formData,
       );
       localStorage.setItem("token", data.token);
+      localStorage.setItem("name", data.user.fullName);
       navigate("/home", { replace: true });
     } catch (err) {
       console.error(err);
