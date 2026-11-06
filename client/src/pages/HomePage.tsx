@@ -209,6 +209,9 @@ const HomePage = () => {
 
     if (inputRef.current) inputRef.current.style.height = "auto";
 
+    let assistantMessageId: string | null = null;
+    let reply = "";
+
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
@@ -237,33 +240,108 @@ const HomePage = () => {
         );
       }
 
-      const payload = await response.json();
-      const reply = String(payload?.message?.content ?? "").trim();
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("The server did not provide a response stream.");
+      }
 
-      if (requestId !== requestRef.current) return;
-
+      const messageId = crypto.randomUUID();
+      assistantMessageId = messageId;
       setMessages((current) => [
         ...current,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: reply || "I couldn't generate a response. Please try again.",
-        },
+        { id: messageId, role: "assistant", content: "" },
       ]);
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      const processFrame = (frame: string) => {
+        let event = "message";
+        let data = "";
+
+        for (const line of frame.split("\n")) {
+          if (line.startsWith("event:")) {
+            event = line.slice(6).trim();
+          } else if (line.startsWith("data:")) {
+            data += line.slice(5).trim();
+          }
+        }
+
+        if (!data) return;
+
+        const payload = JSON.parse(data);
+        if (event === "error") {
+          throw new Error(
+            String(payload?.message ?? "Failed to generate a response."),
+          );
+        }
+
+        if (event !== "chunk") return;
+
+        reply += String(payload?.content ?? "");
+        if (requestId !== requestRef.current) return;
+
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === messageId
+              ? { ...message, content: reply }
+              : message,
+          ),
+        );
+      };
+
+      while (true) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value, { stream: !done });
+
+        let frameEnd = buffer.indexOf("\n\n");
+        while (frameEnd !== -1) {
+          processFrame(buffer.slice(0, frameEnd));
+          buffer = buffer.slice(frameEnd + 2);
+          frameEnd = buffer.indexOf("\n\n");
+        }
+
+        if (done) {
+          if (buffer.trim()) processFrame(buffer);
+          break;
+        }
+      }
+
+      if (requestId !== requestRef.current) return;
+      if (!reply.trim()) {
+        throw new Error("The assistant returned an empty response.");
+      }
     } catch (error) {
       if (requestId !== requestRef.current) return;
 
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content:
-            error instanceof Error
-              ? error.message
-              : "Something went wrong. Please try again.",
-        },
-      ]);
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "Something went wrong. Please try again.";
+
+      setMessages((current) => {
+        if (assistantMessageId) {
+          return current.map((message) =>
+            message.id === assistantMessageId
+              ? {
+                  ...message,
+                  content: reply
+                    ? `${reply}\n\n${errorMessage}`
+                    : errorMessage,
+                }
+              : message,
+          );
+        }
+
+        return [
+          ...current,
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: errorMessage,
+          },
+        ];
+      });
     } finally {
       if (requestId === requestRef.current) {
         setThinking(false);

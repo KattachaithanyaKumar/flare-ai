@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { ChatOllama } from "@langchain/ollama";
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { ChatGoogle } from "@langchain/google/node";
 import { createAgent } from "langchain";
 
 const provider = (
@@ -25,10 +25,11 @@ const createGemini = () => {
     throw new Error("GEMINI_API_KEY is required when LLM_PROVIDER=gemini");
   }
 
-  return new ChatGoogleGenerativeAI({
-    model: process.env.GEMINI_MODEL ?? "gemini-2.5-flash",
+  return new ChatGoogle({
+    model: process.env.GEMINI_MODEL ?? "gemini-3.8-flash",
     apiKey,
-    temperature: 0,
+    reasoningEffort: process.env.GEMINI_REASONING_EFFORT ?? "low",
+    maxRetries: 0,
   });
 };
 
