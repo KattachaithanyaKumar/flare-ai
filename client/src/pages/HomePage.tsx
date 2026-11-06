@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import logo from "../assets/logo.png";
+import Markdown from "../components/Markdown";
 import { supabase } from "../lib/supabase";
 
 type Message = {
@@ -101,6 +102,8 @@ const ArrowUpRightIcon = ({ className = "h-4 w-4" }: IconProps) => (
   </svg>
 );
 
+const API_URL = import.meta.env.VITE_API_URL ?? "/api";
+
 const recentChats = [
   "Product launch ideas",
   "Summarize meeting notes",
@@ -150,7 +153,7 @@ const HomePage = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const replyTimeout = useRef<number | null>(null);
+  const requestRef = useRef(0);
 
   const [name, setName] = useState(
     () => localStorage.getItem("name")?.trim() || "there",
@@ -164,7 +167,7 @@ const HomePage = () => {
 
   useEffect(() => {
     return () => {
-      if (replyTimeout.current) window.clearTimeout(replyTimeout.current);
+      requestRef.current += 1;
     };
   }, []);
 
@@ -185,34 +188,87 @@ const HomePage = () => {
     };
   }, []);
 
-  const sendMessage = (value: string) => {
+  const sendMessage = async (value: string) => {
     const text = value.trim();
     if (!text || thinking) return;
 
-    setMessages((current) => [
-      ...current,
-      { id: crypto.randomUUID(), role: "user", content: text },
-    ]);
+    const requestId = requestRef.current + 1;
+    requestRef.current = requestId;
+
+    const userMessage: Message = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: text,
+    };
+    const history = [...messages, userMessage];
+
+    setMessages(history);
     setDraft("");
     setThinking(true);
     setSidebarOpen(false);
 
     if (inputRef.current) inputRef.current.style.height = "auto";
 
-    if (replyTimeout.current) window.clearTimeout(replyTimeout.current);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
 
-    replyTimeout.current = window.setTimeout(() => {
+      if (!token) {
+        throw new Error("Your session has expired. Please log in again.");
+      }
+
+      const response = await fetch(`${API_URL}/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          messages: history.map(({ role, content }) => ({ role, content })),
+        }),
+      });
+
+      if (requestId !== requestRef.current) return;
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(
+          body?.message ?? "Something went wrong. Please try again.",
+        );
+      }
+
+      const payload = await response.json();
+      const reply = String(payload?.message?.content ?? "").trim();
+
+      if (requestId !== requestRef.current) return;
+
       setMessages((current) => [
         ...current,
         {
           id: crypto.randomUUID(),
           role: "assistant",
-          content: `This is a preview of the chat experience, ${firstName}. Connect the chat endpoint and I'll answer with real responses right here.`,
+          content: reply || "I couldn't generate a response. Please try again.",
         },
       ]);
-      setThinking(false);
-      replyTimeout.current = null;
-    }, 900);
+    } catch (error) {
+      if (requestId !== requestRef.current) return;
+
+      setMessages((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content:
+            error instanceof Error
+              ? error.message
+              : "Something went wrong. Please try again.",
+        },
+      ]);
+    } finally {
+      if (requestId === requestRef.current) {
+        setThinking(false);
+      }
+    }
   };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -227,10 +283,7 @@ const HomePage = () => {
   };
 
   const handleNewChat = () => {
-    if (replyTimeout.current) {
-      window.clearTimeout(replyTimeout.current);
-      replyTimeout.current = null;
-    }
+    requestRef.current += 1;
     setMessages([]);
     setDraft("");
     setThinking(false);
@@ -437,9 +490,7 @@ const HomePage = () => {
                         <p className="mb-1 text-xs font-semibold text-slate-400">
                           Flare AI
                         </p>
-                        <div className="whitespace-pre-wrap text-[15px] leading-7 text-slate-700">
-                          {message.content}
-                        </div>
+                        <Markdown content={message.content} />
                       </div>
                     </div>
                   ),
