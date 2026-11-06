@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 
 import { requireAuth } from "./middleware/requireAuth.js";
+import chatRouter from "./routes/chat.js";
 
 const PORT = process.env.PORT ?? 3000;
 
@@ -41,6 +42,8 @@ app.get("/api/me", requireAuth, (req, res) => {
     },
   });
 });
+
+app.use("/api/chat", chatRouter);
 
 app.listen(PORT, () => {
   console.log(`server started with http://localhost:${PORT}`);
